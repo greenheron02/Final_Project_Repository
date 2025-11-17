@@ -24,7 +24,7 @@ colsToLoad = [
     'longitude', 'length', 'listing_color', 'make_name', 'maximum_seating',
     'mileage', 'model_name', 'salvage', 'savings_amount', 'seller_rating',
     'theft_title', 'torque', 'transmission', 'trim_name', 'wheel_system',
-    'wheelbase', 'width', 'year', 'price', 'city_fuel_economy', 'body_type'
+    'wheelbase', 'width', 'year', 'price', 'city_fuel_economy'
 ]
 
 
@@ -113,7 +113,7 @@ def trainRandomForest(df):
         'seller_rating', 'savings_amount', 'avg_fuel_economy'
     ]
     categoricalCols = [
-        'make_name', 'model_name', 'trim_name', 'body_type', 'transmission',
+        'make_name', 'model_name', 'trim_name', 'transmission',
         'wheel_system', 'fuel_type', 'listing_color', 'interior_color'
     ]
     booleanCols = [
@@ -232,7 +232,7 @@ def trainNearestNeighbor(df):
         'seller_rating', 'savings_amount', 'avg_fuel_economy'
     ]
     categoricalCols = [
-        'make_name', 'model_name', 'trim_name', 'body_type', 'transmission',
+        'make_name', 'model_name', 'trim_name', 'transmission',
         'wheel_system', 'fuel_type', 'listing_color', 'interior_color'
     ]
     booleanCols = [
