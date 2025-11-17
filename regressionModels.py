@@ -24,7 +24,7 @@ colsToLoad = [
     'longitude', 'length', 'listing_color', 'make_name', 'maximum_seating',
     'mileage', 'model_name', 'salvage', 'savings_amount', 'seller_rating',
     'theft_title', 'torque', 'transmission', 'trim_name', 'wheel_system',
-    'wheelbase', 'width', 'year', 'price', 'city_fuel_economy'
+    'wheelbase', 'width', 'year', 'price', 'city_fuel_economy', 'body_type'
 ]
 
 
@@ -56,7 +56,6 @@ def cleanAndFeatureEngineer(df):
     print("Preprocessing data...")
     dfProcessed = df.copy()
 
-    # Clean numeric-like string columns
     colsToCleanNumeric = [
         'height', 'length', 'wheelbase', 'width', 'torque', 'horsepower',
         'maximum_seating', 'mileage', 'savings_amount', 'seller_rating',
@@ -68,12 +67,10 @@ def cleanAndFeatureEngineer(df):
             dfProcessed[col] = dfProcessed[col].str.replace(r"[^0-9\.]", "", regex=True)
             dfProcessed[col] = pd.to_numeric(dfProcessed[col], errors='coerce')
 
-    # Drop rows with critical missing data
     colsToDropna = ['height', 'length', 'trim_name', 'price']
     existingDropnaCols = [col for col in colsToDropna if col in dfProcessed.columns]
     dfProcessed.dropna(subset=existingDropnaCols, inplace=True)
 
-    # Fill boolean columns
     boolColsToFill = [
         'has_accidents', 'isCab', 'is_cpo', 'is_oemcpo', 'salvage', 'theft_title'
     ]
@@ -82,18 +79,15 @@ def cleanAndFeatureEngineer(df):
             dfProcessed[col] = dfProcessed[col].astype(pd.BooleanDtype())
             dfProcessed[col] = dfProcessed[col].fillna(False)
             
-    # Create 'Car_Age'
     currentYear = datetime.datetime.now().year
     if 'year' in dfProcessed.columns:
         dfProcessed['Car_Age'] = currentYear - dfProcessed['year']
 
-    # Create 'avg_fuel_economy'
     if 'city_fuel_economy' in dfProcessed.columns and 'highway_fuel_economy' in dfProcessed.columns:
         dfProcessed['avg_fuel_economy'] = dfProcessed[
             ['city_fuel_economy', 'highway_fuel_economy']
         ].mean(axis=1)
 
-    # Drop replaced or original columns
     colsToDrop = ['city_fuel_economy', 'highway_fuel_economy', 'year']
     dfProcessed.drop(columns=colsToDrop, inplace=True, errors='ignore')
 
@@ -113,7 +107,7 @@ def trainRandomForest(df):
         'seller_rating', 'savings_amount', 'avg_fuel_economy'
     ]
     categoricalCols = [
-        'make_name', 'model_name', 'trim_name', 'transmission',
+        'make_name', 'model_name', 'trim_name', 'body_type', 'transmission',
         'wheel_system', 'fuel_type', 'listing_color', 'interior_color'
     ]
     booleanCols = [
@@ -218,6 +212,8 @@ def trainRandomForest(df):
     plt.title('Example Predictions (Random Forest)', fontsize=16)
     plt.savefig('rf_example_predictions.png', bbox_inches='tight', dpi=150)
     print("...Random Forest plots saved.")
+    
+    return rmse, r2 
 
 def trainNearestNeighbor(df):
     # --- 3. K-NEAREST NEIGHBORS MODEL ---
@@ -232,7 +228,7 @@ def trainNearestNeighbor(df):
         'seller_rating', 'savings_amount', 'avg_fuel_economy'
     ]
     categoricalCols = [
-        'make_name', 'model_name', 'trim_name', 'transmission',
+        'make_name', 'model_name', 'trim_name', 'body_type', 'transmission',
         'wheel_system', 'fuel_type', 'listing_color', 'interior_color'
     ]
     booleanCols = [
@@ -283,7 +279,7 @@ def trainNearestNeighbor(df):
     yPred = model.predict(xTest)
     
     rmse = np.sqrt(mean_squared_error(yTest, yPred))
-    r2 = r2_score(yTest, yPred) # <-- Fixed bug here
+    r2 = r2_score(yTest, yPred)
     
     print("\n--- Model Performance (K-Nearest Neighbors) ---")
     print(f"Root Mean Squared Error (RMSE): ${rmse:,.2f}")
@@ -315,6 +311,50 @@ def trainNearestNeighbor(df):
     plt.title('Example Predictions (K-Nearest Neighbors)', fontsize=16)
     plt.savefig('knn_example_predictions.png', bbox_inches='tight', dpi=150)
     print("...K-Nearest Neighbors plots saved.")
+    
+    return rmse, r2 
+
+def createComparisonPlot(rfRMSE, rfR2, knnRMSE, knnR2):
+    """
+    Creates a bar chart comparing the performance of the two models.
+    """
+    print("\n--- Creating Model Comparison Plot ---")
+    
+    data = {
+        'Model': ['Random Forest', 'K-Nearest Neighbors'],
+        'RMSE ($)': [rfRMSE, knnRMSE],
+        'R-Squared (R²)': [rfR2, knnR2]
+    }
+    dfMetrics = pd.DataFrame(data)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    
+    sns.barplot(x='Model', y='RMSE ($)', data=dfMetrics, ax=ax1, palette='Reds_r')
+    ax1.set_title('Model Comparison: RMSE (Lower is Better)')
+    ax1.set_ylabel('Root Mean Squared Error ($)')
+    ax1.set_xlabel('Model')
+    for p in ax1.patches:
+        ax1.annotate(f"${p.get_height():,.2f}", 
+                     (p.get_x() + p.get_width() / 2., p.get_height()), 
+                     ha='center', va='center', 
+                     xytext=(0, 10), textcoords='offset points')
+
+    sns.barplot(x='Model', y='R-Squared (R²)', data=dfMetrics, ax=ax2, palette='Greens_r')
+    ax2.set_title('Model Comparison: R-Squared (Higher is Better)')
+    ax2.set_ylabel('R-Squared (R²) Score')
+    ax2.set_xlabel('Model')
+    ax2.set_ylim(0, 1.0) 
+    for p in ax2.patches:
+        ax2.annotate(f"{p.get_height():.3f}", 
+                     (p.get_x() + p.get_width() / 2., p.get_height()), 
+                     ha='center', va='center', 
+                     xytext=(0, 10), textcoords='offset points')
+    
+    fig.suptitle('Regression Model Performance Comparison', fontsize=16)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig('model_comparison.png')
+    
+    print("...Model comparison plot saved as 'model_comparison.png'")
 
 
 def main():
@@ -327,7 +367,7 @@ def main():
         if useSample:
             print(f"--- Running on a sample of {sampleSize} rows ---")
             if len(dfClean) > sampleSize:
-                dfRun = dfClean.sample(n=sampleSize, random_state=42) # <-- Fixed bug here
+                dfRun = dfClean.sample(n=sampleSize, random_state=42)
             else:
                 print(f"Warning: Dataset length ({len(dfClean)}) is less than sample size. Using full dataset.")
                 dfRun = dfClean
@@ -335,12 +375,13 @@ def main():
             print("--- Running on the full dataset ---")
             dfRun = dfClean
         
-        # Create copies to ensure data is not modified between models
         dfForRF = dfRun.copy()
-        trainRandomForest(dfForRF)
+        rfRMSE, rfR2 = trainRandomForest(dfForRF)
         
         dfForKNN = dfRun.copy()
-        trainNearestNeighbor(dfForKNN)
+        knnRMSE, knnR2 = trainNearestNeighbor(dfForKNN)
+        
+        createComparisonPlot(rfRMSE, rfR2, knnRMSE, knnR2)
         
         print("\nAll models trained successfully.")
 
