@@ -12,11 +12,11 @@ from sklearn.metrics import mean_squared_error, r2_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas.plotting
-
+from sklearn.linear_model import LinearRegression 
 # --- Configuration ---
-inputFile = 'used_cars_data.csv'
+inputFile = 'Final_Project/used_cars_data.csv'
 useSample = True
-sampleSize = 100000
+sampleSize = 1000
 
 colsToLoad = [
     'has_accidents', 'height', 'highway_fuel_economy', 'horsepower',
@@ -93,6 +93,104 @@ def cleanAndFeatureEngineer(df):
 
     print(f"...Preprocessing and feature engineering complete. {len(dfProcessed)} rows remaining.")
     return dfProcessed
+
+def trainRegressor(df,reg):
+    # --- 2. RANDOM FOREST MODEL ---
+
+    reg_name = type(reg).__name__
+    
+    targetCol = 'price'
+    X = df.drop(targetCol, axis=1)
+    y = df[targetCol]
+    
+    numericalCols = [
+        'latitude', 'longitude', 'mileage', 'Car_Age', 'horsepower', 'torque',
+        'height', 'length', 'wheelbase', 'width', 'maximum_seating',
+        'seller_rating', 'savings_amount', 'avg_fuel_economy'
+    ]
+    categoricalCols = [
+        'make_name', 'model_name', 'trim_name', 'body_type', 'transmission',
+        'wheel_system', 'fuel_type', 'listing_color', 'interior_color'
+    ]
+    booleanCols = [
+        'has_accidents', 'isCab', 'is_cpo', 'is_oemcpo', 'salvage', 'theft_title'
+    ]
+    
+    numericalCols = [col for col in numericalCols if col in X.columns]
+    categoricalCols = [col for col in categoricalCols if col in X.columns]
+    booleanCols = [col for col in booleanCols if col in X.columns]
+
+    numericTransformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', StandardScaler())
+    ])
+
+    categoricalTransformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+        ('onehot', OneHotEncoder(
+            handle_unknown='ignore', 
+            sparse_output=False,
+            min_frequency=0.01  
+        ))
+    ])
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', numericTransformer, numericalCols),
+            ('cat', categoricalTransformer, categoricalCols),
+            ('bool', 'passthrough', booleanCols)
+        ],
+        remainder='drop' 
+    )
+
+    model = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('regressor', reg)
+    ])
+
+    xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    print(f"\n--- Training Random Forest model on {len(xTrain)} rows... ---")
+    model.fit(xTrain, yTrain)
+
+    print("Evaluating Random Forest model...")
+    yPred = model.predict(xTest)
+    
+    rmse = np.sqrt(mean_squared_error(yTest, yPred))
+    r2 = r2_score(yTest, yPred)
+    
+    print(f"\n--- Model Performance ({reg_name}) ---")
+    print(f"Root Mean Squared Error (RMSE): ${rmse:,.2f}")
+    print(f"R-squared (R²): {r2:.3f}")
+
+    plotData = pd.DataFrame({'Actual Price': yTest, 'Predicted Price': yPred})
+    plt.figure(figsize=(10, 10))
+    sns.scatterplot(x='Actual Price', y='Predicted Price', data=plotData, alpha=0.5)
+    maxPrice = max(yTest.max(), yPred.max())
+    plt.plot([0, maxPrice], [0, maxPrice], color='red', linestyle='--', lw=2, label='Perfect Prediction')
+    plt.title(f'Actual Price vs. Predicted Price ({reg_name})')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f'{reg_name}_actual_vs_predicted.png')
+
+    print(f"\n--- Example Predictions ({reg_name}) ---")
+    exampleData = plotData.head(10).copy()
+    exampleData['Error ($)'] = exampleData['Predicted Price'] - exampleData['Actual Price']
+    exampleData = exampleData.round(2)
+    print(exampleData.to_string())
+    
+    fig, ax = plt.subplots(figsize=(10, 3)) 
+    ax.axis('tight')
+    ax.axis('off')
+    table = pd.plotting.table(ax, exampleData, loc='center', cellLoc='center', colWidths=[0.2, 0.2, 0.2])
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 1.2) 
+    plt.title(f'Example Predictions ({reg_name})', fontsize=16)
+    plt.savefig(f'{reg_name}_example_predictions.png', bbox_inches='tight', dpi=150)
+    print(f"...{reg_name} plots saved.")
+    
+    return rmse, r2 
 
 def trainRandomForest(df):
     # --- 2. RANDOM FOREST MODEL ---
@@ -314,17 +412,28 @@ def trainNearestNeighbor(df):
     
     return rmse, r2 
 
-def createComparisonPlot(rfRMSE, rfR2, knnRMSE, knnR2):
+def createComparisonPlot(modelNames,RMSEs,R2s):
     """
-    Creates a bar chart comparing the performance of the two models.
+    Creates a bar chart comparing the performance of two or more models.
+
     """
     print("\n--- Creating Model Comparison Plot ---")
-    
+
+    if len(RMSEs) <= 1 or len(R2s) <= 1 or len(modelNames) <= 1: 
+        raise ValueError('createComparisonPlot() must have 2 arrays of len 2 or greater')
+
+
     data = {
-        'Model': ['Random Forest', 'K-Nearest Neighbors'],
-        'RMSE ($)': [rfRMSE, knnRMSE],
-        'R-Squared (R²)': [rfR2, knnR2]
+        'Model': modelNames,
+        'RMSE ($)': RMSEs,
+        'R-Squared (R²)': R2s
     }
+    
+    # data = {
+    #     'Model': ['Random Forest', 'K-Nearest Neighbors'],
+    #     'RMSE ($)': [rfRMSE, knnRMSE],
+    #     'R-Squared (R²)': [rfR2, knnR2]
+    # }
     dfMetrics = pd.DataFrame(data)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
@@ -356,6 +465,54 @@ def createComparisonPlot(rfRMSE, rfR2, knnRMSE, knnR2):
     
     print("...Model comparison plot saved as 'model_comparison.png'")
 
+def createCorrelationMatrices(df:pd.DataFrame):
+    columns = [col for col in df.columns if (df[col].dtype == float or df[col].dtype == int)]
+    columns.remove('price')
+
+# Copy car_data into dataframe for processing
+    corr_data = df.copy()
+
+    col1 = columns[0:int(len(columns)/2)]
+    col2 = columns[int(len(columns)/2):len(columns)]
+
+    # Make sure price data is compared against
+    col1.insert(0,'price')
+    col2.insert(0,'price')
+
+    # Get correlation values for each subarray
+    matrix1 = corr_data[col1].corr()
+    matrix2  = corr_data[col2].corr() 
+
+    # Plot correlation matrices
+    fig = plt.figure(figsize=(8,6))
+    sns.heatmap(matrix1,annot=True,cmap="coolwarm", fmt=".2f", linewidths=0.5) 
+    plt.title("Correlation Heatmap 1")
+    plt.savefig('corr_matrix1.png')
+    fig = plt.figure(figsize=(8,6))
+    sns.heatmap(matrix2,annot=True,cmap="coolwarm", fmt=".2f", linewidths=0.5) 
+    plt.title("Correlation Heatmap 2")
+    plt.savefig('cor_matrix_2.png')
+
+def createAnovaPlot(df,target,d_type):
+    from scipy.stats import f_oneway 
+
+    predictor_list = [col for col in df.columns if (isinstance(df[col].iloc[0],d_type))]
+    output = [] 
+    for predictor in predictor_list: 
+        CategoryGroupLists=df.groupby(predictor)[target].apply(list)
+        AnovaResults = f_oneway(*CategoryGroupLists)
+
+        output.append(AnovaResults[1])
+    
+    plt.figure(figsize=(12,5))
+    plt.bar(predictor_list,output)
+    if max(output) > 0.01: 
+        plt.axhline(y=0.05,color='r',label='Maximum p value: 0.05')
+    plt.xticks(rotation=30)
+    plt.title(f'One-Way ANOVA analysis for fields of type: {d_type.__name__} ')
+    plt.legend()
+    plt.savefig(f'anova_{d_type.__name__}.png')
+
 
 def main():
     dfRaw = loadData(inputFile, colsToLoad)
@@ -375,13 +532,23 @@ def main():
             print("--- Running on the full dataset ---")
             dfRun = dfClean
         
+        dfForSVR = dfRun.copy() 
+        svrRMSE, svrR2 = trainRegressor(dfForSVR,LinearRegression())
+        
         dfForRF = dfRun.copy()
         rfRMSE, rfR2 = trainRandomForest(dfForRF)
         
         dfForKNN = dfRun.copy()
         knnRMSE, knnR2 = trainNearestNeighbor(dfForKNN)
         
-        createComparisonPlot(rfRMSE, rfR2, knnRMSE, knnR2)
+        createCorrelationMatrices(dfRun)
+        
+        createAnovaPlot(dfRun,'price',np.bool)
+        createAnovaPlot(dfRun,'price',str)
+
+        createComparisonPlot(['Random Forest', 'K-Nearest Neighbor','Linear Regressor'],
+                             [rfRMSE,knnRMSE,svrRMSE],
+                             [rfR2,knnR2,svrR2])
         
         print("\nAll models trained successfully.")
 
