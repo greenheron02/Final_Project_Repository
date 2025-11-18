@@ -8,11 +8,14 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.neighbors import KNeighborsRegressor
+from sklearn.linear_model import LinearRegression 
+from sklearn.model_selection import cross_val_score 
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn import metrics
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas.plotting
-from sklearn.linear_model import LinearRegression 
+
 # --- Configuration ---
 inputFile = 'Final_Project/used_cars_data.csv'
 useSample = True
@@ -27,6 +30,9 @@ colsToLoad = [
     'wheelbase', 'width', 'year', 'price', 'city_fuel_economy', 'body_type'
 ]
 
+
+def chunk_list(data, chunk_size):
+    return [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
 
 def loadData(filePath, columns):
     """
@@ -513,6 +519,83 @@ def createAnovaPlot(df,target,d_type):
     plt.legend()
     plt.savefig(f'anova_{d_type.__name__}.png')
 
+def createBoxPlots(df):
+
+    columns = df.columns
+    columns.remove('price')
+
+    clist = chunk_list(columns,3)
+    long = []
+    short = []
+    for chunk in clist: 
+        long.extend([c for c in chunk if len(df[c].unique()) > 3])
+        short.extend([c for c in chunk if c not in long])
+
+    cols = short
+    fig, PlotCanvas = plt.subplots(nrows=1,ncols=len(cols),figsize=(24,5))
+    for pcol, i in zip(cols, range(len(cols))):
+        df.boxplot(column='price',by=pcol,figsize=(5,5),vert=True,ax=PlotCanvas[i])
+
+    cols = long
+    figs = [0]*len(long)
+    axes = [0]*len(long)
+    for pcol, i in zip(cols, range(len(cols))):
+        figs[i], axes[i] = plt.subplots(figsize=(18,5))
+        df.boxplot(column='price',by=pcol,figsize=(18,5),vert=True,ax=axes[i])
+        for tick in axes[i].get_xticklabels(): 
+            tick.set_rotation(45)
+
+# Train and apply regression model to training data
+def getMape(df,x_train, x_test, y_train, y_test, regressor):
+    print(f'\n##### Model Validation and Accuracy Calculations for {type(regressor).__name__} ##########')
+    target = 'price'
+
+    predictors = df.columns 
+    predictors.remove(target)
+    # Fit regression model with training data (learning)
+    model = regressor.fit(x_train,y_train)
+
+    # Get preliminar R2 value to check correlation once again
+    print('R2 Value mm:',metrics.r2_score(y_test, model.predict(x_test)))
+
+    # predict y values using testing x data
+    prediction = model.predict(x_test)
+    
+    # Analyze error results, method from Farukh Hashmi
+    TestingDataResults = pd.DataFrame(data=x_test, columns=predictors)
+    TestingDataResults[target] = y_test 
+    TestingDataResults[('Predicted'+target)]=np.round(prediction)
+
+    print(TestingDataResults[[target,'Predicted'+target]].head())
+
+    # Calculate Average Percent Error using test data
+    TestingDataResults['APE'] = 100 * ((abs(TestingDataResults['price']-TestingDataResults['Predictedprice']))/TestingDataResults['price'])
+
+    # Get mean and medain of Average Percent Error
+    MAPE = np.mean(TestingDataResults['APE'])
+    MedianMAPE = np.median(TestingDataResults['APE'])
+
+    # Calculate accuracy through inverse of Mean Average Percent Error
+    Accuracy =100 - MAPE
+    MedianAccuracy=100- MedianMAPE
+    print('Mean Accuracy on test data:', Accuracy) # Can be negative sometimes due to outlier
+    print('Median Accuracy on test data:', MedianAccuracy)
+
+    # return results and trained model
+    return TestingDataResults, model
+
+def checkMapeAccuracy(reg,X,y):
+    def AccScore(orig,pred): 
+        MAPE = np.mean(100*(np.abs(orig-pred)/orig))
+        return (100-MAPE)
+
+    custom_Scorer = metrics.make_scorer(AccScore, greater_is_better=True)   
+
+
+    Acc_Vals = cross_val_score(reg, X, y, cv=10, scoring=custom_Scorer)
+    print('\nAccuracy values for 10-fold Cross Validation:\n',Acc_Vals)
+    print('\nFinal Average Accuracy of the model:', round(Acc_Vals.mean(),2))
+    return round(Acc_Vals.mean(),2)
 
 def main():
     dfRaw = loadData(inputFile, colsToLoad)
